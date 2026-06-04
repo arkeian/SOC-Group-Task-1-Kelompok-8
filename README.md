@@ -1801,8 +1801,125 @@ sudo systemctl restart wazuh-manager
 
 ## XII: Pembaruan Active Response Wazuh (VM 3)
 
+<p align="justify"> &emsp; Langkah selanjutnya adalah melakukan pembaruan <b><i>Active Response</i></b> pada <code>Wazuh</code> agar <code>Shuffle</code> dapat mengirimkan alamat <code>IP</code> secara langsung ke <code>Wazuh Agent 2</code> untuk dilakukan pemblokiran otomatis. Di mana langkah implementasinya: </p> <ol> <li> <p align="justify"> Pada <code>VM 3</code>, buat script baru pada direktori <code>/var/ossec/active-response/bin</code>. Script ini nantinya akan dijalankan oleh mekanisme <b><i>Active Response</i></b> ketika menerima perintah pemblokiran yang dikirimkan melalui <code>Shuffle</code>. </p> </li> </ol>
+
+```sh
+sudo nano /var/ossec/active-response/bin/shuffle-firewall-drop
+```
+
+<p align="justify"> Masukkan konfigurasi berikut: </p>
+
+```sh
+#!/bin/bash
+
+LOG_FILE="/var/ossec/logs/shuffle-ar.log"
+
+INPUT=""
+IFS= read -r -t 5 INPUT || true
+
+IP=""
+if [ -n "$INPUT" ] && command -v jq >/dev/null 2>&1; then
+  IP=$(printf '%s' "$INPUT" | jq -r '.parameters.extra_args[0] // empty' 2>/dev/null)
+fi
+
+if [ -z "$IP" ] && [ -n "$INPUT" ]; then
+  IP=$(printf '%s' "$INPUT" | sed -n 's/.*"extra_args"[[:space:]]*:[[:space:]]*\[[[:space:]]*"\([^"]*\)".*/\1/p')
+fi
+
+if [ -z "$IP" ] && [ "$#" -gt 0 ]; then
+  IP="$1"
+fi
+
+if ! [[ "$IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+  echo "$(date) Invalid or missing IP from Shuffle: ${IP:-<empty>}" >> "$LOG_FILE"
+  exit 1
+fi
+
+IFS=. read -r O1 O2 O3 O4 <<< "$IP"
+for OCTET in "$O1" "$O2" "$O3" "$O4"; do
+  if [ "$OCTET" -gt 255 ]; then
+    echo "$(date) Invalid IP from Shuffle: $IP" >> "$LOG_FILE"
+    exit 1
+  fi
+done
+
+if iptables -C INPUT -s "$IP" -j DROP 2>/dev/null; then
+  echo "$(date) Already blocking $IP from Shuffle" >> "$LOG_FILE"
+  exit 0
+fi
+
+if iptables -I INPUT -s "$IP" -j DROP; then
+  echo "$(date) Blocking $IP from Shuffle" >> "$LOG_FILE"
+  exit 0
+fi
+
+echo "$(date) Failed to block $IP from Shuffle" >> "$LOG_FILE"
+exit 1
+```
+
+<p align="justify">
+&emsp; Konfigurasi tersebut berfungsi untuk menerima alamat <code>IP</code> yang dikirimkan oleh <code>Shuffle</code>, kemudian melakukan proses validasi sebelum menjalankan pemblokiran. Validasi dilakukan dengan memastikan format alamat <code>IP</code> sesuai, memeriksa nilai setiap oktet, serta memastikan rule pemblokiran yang sama belum tersedia pada <code>iptables</code>. Apabila seluruh proses validasi berhasil, script akan menambahkan rule <code>DROP</code> ke dalam <code>iptables</code> dan mencatat aktivitas tersebut ke dalam file log <code>shuffle-ar.log</code>.
+</p>
+
+</p> <ol start="2"> <li> <p align="justify"> Kemudian ubah permission script agar dapat dieksekusi oleh <code>Wazuh</code>. </p> </li> </ol>
+
+```sh
+sudo chmod 750 /var/ossec/active-response/bin/shuffle-firewall-drop
+sudo chown root:wazuh /var/ossec/active-response/bin/shuffle-firewall-drop
+```
+
+<ol start="3"> <li> <p align="justify"> Pada <code>VM 1</code>, tambahkan blok konfigurasi berikut pada file <code>/var/ossec/etc/ossec.conf</code>. Konfigurasi ini digunakan untuk mendaftarkan command baru bernama <code>shuffle-firewall-drop</code> agar dapat dikenali dan dijalankan oleh <code>Wazuh Manager</code>. </p> </li> </ol>
+
+```xml
+<command>
+  <name>shuffle-firewall-drop</name>
+  <executable>shuffle-firewall-drop.sh</executable>
+  <timeout_allowed>no</timeout_allowed>
+</command>
+
+<active-response>
+  <disabled>no</disabled>
+  <command>shuffle-firewall-drop</command>
+  <location>local</location>
+</active-response>
+```
+
+<p align="justify"> &emsp; Blok <code>&lt;command&gt;</code> digunakan untuk mendefinisikan script yang akan dipanggil oleh <code>Wazuh</code>, sedangkan blok <code>&lt;active-response&gt;</code> digunakan untuk menentukan mekanisme eksekusi command tersebut pada endpoint yang menerima perintah. </p> <ol start="4"> <li> <p align="justify"> Setelah konfigurasi selesai dilakukan, restart <code>Wazuh Manager</code>. </p> </li> </ol>
+
+```sh
+sudo systemctl restart wazuh-manager
+```
+
+<ol start="5"> <li> <p align="justify"> Apabila terdapat perubahan konfigurasi pada sisi agent, lakukan restart <code>Wazuh Agent</code> pada <code>VM 3</code>. </p> </li> </ol>
+
+```sh
+sudo systemctl restart wazuh-agent
+```
+
+<p align="justify"> &emsp; Setelah proses restart selesai, <code>Wazuh</code> akan mampu menerima instruksi dari <code>Shuffle</code> dan mengeksekusi proses pemblokiran alamat <code>IP</code> secara otomatis melalui mekanisme <b><i>Active Response</i></b>. </p>
+
 ## XIII: Pengujian Workflow Shuffle
+
+<p align="justify">
+&emsp; Langkah terakhir adalah melakukan validasi terhadap workflow <b><i>SOAR</i></b> yang telah dibangun untuk memastikan seluruh komponen dapat saling terintegrasi dengan baik. Di mana langkah implementasinya dapat dilihat pada dokumentasi video yang sudah disediakan.
+</p>
+
+<p align="justify">
+&emsp; Berdasarkan hasil pengujian yang tertera pada video, sistem berhasil menunjukkan bahwasannya <code>Wazuh</code> berhasil mengirimkan alert ke <code>Shuffle</code> melalui <b><i>webhook</i></b>, kemudian <code>Shuffle</code> melakukan analisis tambahan menggunakan <code>AbuseIPDB</code> dan <code>VirusTotal</code> sebelum mengirimkan keputusan pemblokiran ke <code>Wazuh API</code>. Selanjutnya, <code>Wazuh</code> menjalankan <b><i>custom active response</i></b> pada <code>VM 3</code> sehingga alamat <code>IP</code> penyerang dapat diblokir secara otomatis.
+</p>
 
 ## XIV: Penutup
 
 <p align="justify"> &emsp; Melalui pengaturan logging density dan distribution yang tepat, sistem SIEM Wazuh ini berhasil mendeteksi pola anomali (DDoS) tanpa melumpuhkan infrastruktur Azure yang terbatas. Sistem mampu menyaring trafik yang sangat padat menjadi informasi alert yang ringkas dan mudah dibaca pada dashboard, memastikan fungsionalitas deteksi tetap optimal tanpa membebani sumber daya server.  </p>
+
+<p align="justify">
+&emsp; Selain itu, implementasi <b><i>Security Orchestration, Automation, and Response (SOAR)</i></b> menggunakan <code>Shuffle</code> berhasil memperluas kemampuan sistem dengan mengotomatisasi proses analisis dan respons terhadap insiden keamanan. Integrasi antara <code>Wazuh</code>, <code>AbuseIPDB</code>, <code>VirusTotal</code>, dan <code>Shuffle</code> memungkinkan setiap alert yang terdeteksi diproses secara otomatis, mulai dari ekstraksi alamat <code>IP</code>, pengayaan informasi ancaman, hingga eksekusi mekanisme pemblokiran pada endpoint yang dituju.
+</p>
+
+<p align="justify">
+&emsp; Hasil pengujian menunjukkan bahwa seluruh alur otomatisasi berhasil berjalan sesuai dengan yang direncanakan. Alert yang dihasilkan oleh <code>Wazuh</code> berhasil diteruskan ke <code>Shuffle</code> melalui <b><i>webhook</i></b>, diperkaya menggunakan layanan intelijen ancaman, kemudian dikonversi menjadi tindakan mitigasi melalui mekanisme <b><i>Active Response</i></b>. Dengan demikian, sistem tidak hanya mampu mendeteksi aktivitas mencurigakan, tetapi juga dapat melakukan respons secara otomatis tanpa memerlukan intervensi administrator pada setiap tahapan penanganan insiden.
+</p>
+
+<p align="justify">
+&emsp; Secara keseluruhan, <b><i>Proof of Concept (PoC)</i></b> ini berhasil membuktikan bahwa kombinasi <code>Wazuh</code>, <code>Suricata</code>, dan <code>Shuffle</code> dapat diimplementasikan pada lingkungan <code>Microsoft Azure</code> untuk membangun ekosistem keamanan yang terintegrasi. Melalui pendekatan tersebut, proses deteksi, analisis, dan mitigasi ancaman dapat dilakukan secara lebih cepat dan konsisten, sehingga meningkatkan kemampuan sistem dalam menghadapi serangan jaringan yang terjadi secara berulang maupun dalam volume yang besar.
+</p>
