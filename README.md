@@ -1492,7 +1492,7 @@ sudo apt-get install -y apache2-utils
 ab -n 5000 -c 200 -r http://10.0.0.6/
 ```
 
-<ol start="3"> <li> <p align="justify"> Lakukan Validasi Deteksi Serangan melalui <code>Wazuh Dashboard</code>: </p> </li> </ol> <p align="justify"> &emsp; 27 </p> <p align="justify"> &emsp; 28 </p> <p align="justify"> &emsp; 29 </p> <ol start="4"> <li> <p align="justify"> Lakukan validasi <code>IDS</code> pada file <code>fast.log</code> milik <code>Suricata</code> di <code>VM 3</code>: </p> </li> </ol>
+<ol start="3"> <li> <p align="justify"> Lakukan Validasi Deteksi Serangan melalui <code>Wazuh Dashboard</code> </p> </li> </ol>  <ol start="4"> <li> <p align="justify"> Lakukan validasi <code>IDS</code> pada file <code>fast.log</code> milik <code>Suricata</code> di <code>VM 3</code>: </p> </li> </ol>
 
 ```sh
 sudo tail -5 /var/log/suricata/fast.log
@@ -1504,7 +1504,7 @@ sudo tail -5 /var/log/suricata/fast.log
 sudo grep -E 'Rule: 100208' /var/ossec/logs/alerts/alerts.log
 ```
 
-<p align="justify"> &emsp; 30 </p> <ol start="6"> <li> <p align="justify"> Pembuktian <b><i>Active Response</i></b> & Blokir <code>Firewall</code> (<code>VM 3</code>), kembali ke terminal <code>VM 3</code>. Cek log eksekusi <b><i>Active Response</i></b>: </p> </li> </ol>
+<ol start="6"> <li> <p align="justify"> Pembuktian <b><i>Active Response</i></b> & Blokir <code>Firewall</code> (<code>VM 3</code>), kembali ke terminal <code>VM 3</code>. Cek log eksekusi <b><i>Active Response</i></b>: </p> </li> </ol>
 
 ```sh
 sudo cat /var/ossec/logs/active-responses.log
@@ -1679,6 +1679,125 @@ sudo systemctl restart wazuh-manager
 ```
 
 ## XI: Implementasi Workflow Shuffle (VM 4)
+
+<p align="justify">
+&emsp; Langkah selanjutnya adalah melakukan implementasi workflow pada <code>Shuffle</code> untuk melakukan otomatisasi respons terhadap alert yang dikirimkan oleh <code>Wazuh</code>. Di mana langkah implementasinya:
+</p>
+
+<ol type="a">
+	<li>
+		<p align="justify">
+			<code>Webhook</code>, berfungsi untuk menerima alert <code>JSON</code> yang dikirimkan oleh <code>Wazuh</code> sebagai titik masuk utama workflow. Setiap alert yang diterima akan diteruskan ke node berikutnya untuk dilakukan proses analisis dan otomatisasi respons.
+		</p>
+	</li>
+	<li>
+		<p align="justify">
+			<code>Repeat back to me</code>, pada node <code>Change Me</code>, isi <code>Code</code> dengan <code>$exec</code>. Konfigurasi ini digunakan untuk mengekstrak informasi alert yang dikirimkan oleh <code>Wazuh</code> agar dapat diproses oleh node selanjutnya.
+		</p>
+	</li>
+	<li>
+		<p align="justify">
+			<code>Shuffle Tools / repeat_back_to_me</code>, digunakan untuk mengekstrak alamat <code>IP</code> dari alert yang diterima. Pada implementasi ini, node berhasil mengembalikan alamat <code>IP</code> penyerang yang nantinya akan digunakan pada proses validasi reputasi dan pemblokiran otomatis.
+		</p>
+	</li>
+	<li>
+		<p align="justify">
+			<code>AbuseIPDB</code>, gunakan node <code>get_check_ip</code> dan kirim alamat <code>IP</code> hasil ekstraksi dari node sebelumnya. Node ini digunakan untuk memperoleh informasi reputasi alamat <code>IP</code> berdasarkan basis data ancaman milik <code>AbuseIPDB</code>.
+		</p>
+	</li>
+	<li>
+		<p align="justify">
+			<code>VirusTotal</code>, gunakan node <code>get_an_ip_address_report</code> dan kirim alamat <code>IP</code> yang sama. Informasi yang diperoleh digunakan sebagai sumber validasi tambahan untuk memperkuat proses analisis terhadap alamat <code>IP</code> yang terdeteksi.
+		</p>
+	</li>
+	<li>
+		<p align="justify">
+			<code>Python decision</code>, isi logic sehingga output menjadi <code>block</code>. Node ini berfungsi sebagai pengambil keputusan yang menentukan tindakan yang akan dikirimkan ke <code>Wazuh</code> berdasarkan hasil analisis dari node-node sebelumnya.
+		</p>
+	</li>
+	<li>
+		<p align="justify">
+			<code>HTTP Request Get JWT</code>, digunakan untuk melakukan autentikasi terhadap <code>Wazuh API</code>. Node ini akan menghasilkan <code>JSON Web Token (JWT)</code> yang diperlukan untuk mengakses endpoint <code>Wazuh API</code> lainnya.
+		</p>
+		<ol type="i">
+			<li>
+				<p align="justify">
+					<code>Method</code> : <code>POST</code>
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>URL</code> : <code>https://[Wazuh-Public-IP]:55000/security/user/authenticate?raw=true</code>
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>Authentication</code> : <code>Basic Auth</code>
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>Username</code> : <code>wazuh-wui</code>
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>Password</code> : password API yang valid.
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>Verify</code> : <code>False</code>
+				</p>
+			</li>
+		</ol>
+	</li>
+	<li>
+		<p align="justify">
+			<code>HTTP Request Put Trigger Active Response</code>, digunakan untuk mengirimkan perintah <b><i>active response</i></b> ke <code>Wazuh Agent</code>. Pada implementasi ini, node akan mengirimkan perintah pemblokiran alamat <code>IP</code> yang telah diekstrak sebelumnya melalui <code>Wazuh API</code>.
+		</p>
+		<ol type="i">
+			<li>
+				<p align="justify">
+					<code>Method</code> : <code>PUT</code>
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>URL</code> : <code>https://[Wazuh-Public-IP]:55000/active-response?agents_list=002</code>
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>Header</code> : <code>Authorization: Bearer $TOKEN</code>
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>Header</code> : <code>Content-Type: application/json</code>
+				</p>
+			</li>
+			<li>
+				<p align="justify">
+					<code>Body</code> :
+				</p>
+			</li>
+		</ol>
+	</li>
+</ol>
+
+```json
+{
+  "command": "!shuffle-firewall-drop",
+  "arguments": [
+    "$shuffle_tools_1"
+  ]
+}
+```
+
+<p align="justify">
+&emsp; Pada implementasi ini, alamat <code>IP</code> dapat diambil langsung dari output node ekstraksi sehingga tidak perlu ditetapkan secara manual. Setelah workflow berhasil dijalankan, request akan menghasilkan respons <code>Wazuh AR command was sent to all agents</code> yang menandakan perintah <b><i>active response</i></b> berhasil dikirimkan ke agent tujuan.
+</p>
 
 ## XII: Pembaruan Active Response Wazuh (VM 3)
 
