@@ -10,6 +10,23 @@
 
 ## Daftar Isi
 
+- [Anggota Kelompok](#anggota-kelompok)
+- [I: Pendahuluan](#i-pendahuluan)
+- [II: Persiapan Infrastruktur Cloud SIEM di Microsoft Azure](#ii-persiapan-infrastruktur-cloud-siem-di-microsoft-azure)
+- [III: Instalasi Wazuh All-in-One (VM 1)](#iii-instalasi-wazuh-all-in-one-vm-1)
+- [IV: Wazuh Custom Rules dan Active Response (VM 1)](#iv-wazuh-custom-rules-dan-active-response-vm-1)
+- [V: Instalasi Wazuh Agent (VM 2 dan 3)](#v-instalasi-wazuh-agent-vm-2-dan-3)
+- [VI: Instalasi dan Konfigurasi Suricata dan NGINX (VM 3)](#vi-instalasi-dan-konfigurasi-suricata-dan-nginx-vm-3)
+- [VII: Konfigurasi Pembacaan Logfile (VM 3)](#vii-konfigurasi-pembacaan-logfile-vm-3)
+- [VIII: Instalasi Apache Bench dan Simulasi DDoS (VM 2)](#viii-instalasi-apache-bench-dan-simulasi-ddos-vm-2)
+- [IX: Persiapan Infrastruktur Cloud SOAR di Microsoft Azure](#ix-persiapan-infrastruktur-cloud-soar-di-microsoft-azure)
+- [X: Instalasi Docker dan Shuffle (VM 4)](#x-instalasi-docker-dan-shuffle-vm-4)
+- [XI: Konfigurasi Webhook Wazuh (VM 1)](#xi-konfigurasi-webhook-wazuh-vm-1)
+- [XII: Implementasi Workflow Shuffle (VM 4)](#xii-implementasi-workflow-shuffle-vm-4)
+- [XIII: Pembaruan Active Response Wazuh (VM 3)](#xiii-pembaruan-active-response-wazuh-vm-3)
+- [XIV: Pengujian Workflow Shuffle](#xiv-pengujian-workflow-shuffle)
+- [XV: Penutup](#xv-penutup)
+
 ## I: Pendahuluan
 
 <p align="justify"> &emsp;Projek ini bertujuan untuk membuktikan bahwa <b>platform keamanan <i>open-source</i></b> dapat diimplementasikan untuk mendeteksi dan secara otomatis memblokir serangan jaringan, khususnya <b>Distributed Denial of Service (<i>DDoS</i>)</b>. Dalam projek ini, digunakanlah <code>Wazuh</code> sebagai <b>Security Information and Event Management (<i>SIEM</i>)</b> dan <code>Suricata</code> sebagai <b>Network Intrusion Detection System (<i>NIDS</i>)</b>.
@@ -19,7 +36,7 @@
 
 ## II: Persiapan Infrastruktur Cloud SIEM di Microsoft Azure
 
-<p align="justify"> &emsp; Tahap pertama adalah menyiapkan <b><i>environment</i></b> di portal <code>Azure</code> menggunakan akun <code>Microsoft Azure for Students</code>. Kemudian masuk ke dalam <code>Compute Infrastructure → Virtual Machines → Create → Virtual machine</code> untuk membuat <code>Virtual Machine (VM)</code> baru. </p> <p align="justify"> &emsp; Kemudian di halaman Di halaman <code>Create Virtual Machine</code>, konfigurasikan masing-masing <code>VM</code> sesuai dengan konfigurasi yang tertera di bawah, dengan catatan semua <code>VM</code> ditempatkan dalam satu <code>Resource Group</code> yang sama dengan nama <code>WazuhManager_group</code>. </p> <p align="justify"> &emsp; <b>a. Konfigurasi VM 1 (Wazuh Manager)</b> </p> <ol> <li> <p align="justify"> Di tab <code>Basics</code>, tetapkan <code>resource group</code> baru yang nantinya akan digunakan pada <code>VM Wazuh Agent</code> juga. </p> </li>
+<p align="justify"> &emsp; Tahap pertama adalah menyiapkan <b><i>environment</i></b> di portal <code>Azure</code> menggunakan akun <code>Microsoft Azure for Students</code>. Kemudian masuk ke dalam <code>Compute Infrastructure → Virtual Machines → Create → Virtual machine</code> untuk membuat <code>Virtual Machine (VM)</code> baru. </p> <p align="justify"> &emsp; Kemudian di halaman <code>Create Virtual Machine</code>, konfigurasikan masing-masing <code>VM</code> sesuai dengan konfigurasi yang tertera di bawah, dengan catatan semua <code>VM</code> ditempatkan dalam satu <code>Resource Group</code> yang sama dengan nama <code>WazuhManager_group</code>. </p> <p align="justify"> &emsp; <b>a. Konfigurasi VM 1 (Wazuh Manager)</b> </p> <ol> <li> <p align="justify"> Di tab <code>Basics</code>, tetapkan <code>resource group</code> baru yang nantinya akan digunakan pada <code>VM Wazuh Agent</code> juga. </p> </li>
 <li>
 	<p align="justify">
 		Pilih OS <code>Ubuntu Server 24.04 LTS - x64 Gen2</code> dan <code>Size Standard_D2s_v3 (2 vCPU, 8 GiB RAM)</code>. Pemilihan resource didasarkan karena <code>VM Wazuh Manager</code> membutuhkan resource yang cukup besar untuk menjalankan database <code>OpenSearch</code> via <code>Wazuh Indexer</code>.
@@ -63,7 +80,7 @@
 </li>
 </ol>
 
-<p align="justify"> &emsp; Setelah <code>VM</code> dijalankan, langkah selanjutnya adalah melakukan konfigurasi terhadap pengaturan jaringan, di mana beberapa port spesifik perlu dibukan pada <code>Network Security Group (NSG)</code> agar kedua <code>Wazuh Agent</code> bisa berkomunikasi dengan <code>Wazuh Manager</code> dan <code>Dashboard</code> bisa diakses. Navigasi ke menu <code>Networking → Network settings → Create port rule → Inbound port rule</code> di <code>VM</code> tersebut dan tambahkan tiga <code>Inbound Port Rules</code>: </p> <ul> <li> <p align="justify"> <b>AllowWazuhDashboard</b>: </p>
+<p align="justify"> &emsp; Setelah <code>VM</code> dijalankan, langkah selanjutnya adalah melakukan konfigurasi terhadap pengaturan jaringan, di mana beberapa port spesifik perlu dibuka pada <code>Network Security Group (NSG)</code> agar kedua <code>Wazuh Agent</code> bisa berkomunikasi dengan <code>Wazuh Manager</code> dan <code>Dashboard</code> bisa diakses. Navigasi ke menu <code>Networking → Network settings → Create port rule → Inbound port rule</code> di <code>VM</code> tersebut dan tambahkan tiga <code>Inbound Port Rules</code>: </p> <ul> <li> <p align="justify"> <b>AllowWazuhDashboard</b>: </p>
 	<ul>
 		<li>
 			<p align="justify">
@@ -229,7 +246,7 @@
 	</ul>
 </li>
 </ul>
-<p align="justify"> &emsp; Selain itu, Agar IP lokal tidak berubah saat restart, masuk ke pengaturan <code>Network Interface → Wazuh Manager → Configure your IPs → ipconfig1 → Private IP address settings</code>, dan 5 kemudian mengubah ke <code>Private IP</code> menjadi <code>Static</code>. </p> <p align="justify"> &emsp; <b>b. Konfigurasi VM 2 (Wazuh Agent 1) dan VM 3 (Wazuh Agent 2)</b> </p> <ol> <li> <p align="justify"> Secara keseluruhan, proses pembuatan <code>VM 2</code> dan <code>3</code> hampir sama dengan <code>VM 1</code>, hanya saja dengan spesifikasi lebih rendah (<code>Standard_B2as_v2</code>) dan tanpa <code>Public IP</code> demi keamanan. </p> </li>
+<p align="justify"> &emsp; Selain itu, Agar IP lokal tidak berubah saat restart, masuk ke pengaturan <code>Network Interface → Wazuh Manager → Configure your IPs → ipconfig1 → Private IP address settings</code>, dan kemudian mengubah ke <code>Private IP</code> menjadi <code>Static</code>. </p> <p align="justify"> &emsp; <b>b. Konfigurasi VM 2 (Wazuh Agent 1) dan VM 3 (Wazuh Agent 2)</b> </p> <ol> <li> <p align="justify"> Secara keseluruhan, proses pembuatan <code>VM 2</code> dan <code>3</code> hampir sama dengan <code>VM 1</code>, hanya saja dengan spesifikasi lebih rendah (<code>Standard_B2as_v2</code>) dan tanpa <code>Public IP</code> demi keamanan. </p> </li>
 <li>
 	<p align="justify">
 		Buat <code>VM 2</code> dengan nama <code>WazuhAgent1</code> dan <code>VM 3</code> dengan nama <code>WazuhAgent2</code>. Kedua <code>VM</code> menggunakan <code>resource group</code> yang sudah ditetapkan sebelumnya di <code>VM Wazuh Manager</code>.
@@ -502,7 +519,7 @@ sudo systemctl restart wazuh-agent
 
 ## VI: Instalasi dan Konfigurasi Suricata dan NGINX (VM 3)
 
-<p align="justify"> &emsp; Pada langkah ini dilakukanlah proses instalasi <code>web server NGINX</code> sebagai target simulasi dan <code>Suricata</code> sebagai sensor keamanan jaringan. </p> <p align="justify"> &emsp; <b>5.1 NGINX dan Suricata</b> </p> <p align="justify"> &emsp; Pada <code>VM 3</code>, install <code>NGINX</code>: </p>
+<p align="justify"> &emsp; Pada langkah ini dilakukanlah proses instalasi <code>web server NGINX</code> sebagai target simulasi dan <code>Suricata</code> sebagai sensor keamanan jaringan. </p> <p align="justify"> &emsp; <b>6.1 NGINX dan Suricata</b> </p> <p align="justify"> &emsp; Pada <code>VM 3</code>, install <code>NGINX</code>: </p>
 
 ```sh
 sudo apt-get install -y nginx
@@ -520,7 +537,7 @@ sudo suricata-update
 sudo systemctl enable suricata
 ```
 
-<p align="justify"> &emsp; <b>5.2 Mencegah Banjir Log di suricata.yaml</b> </p> <p align="justify"> &emsp; Secara default, <code>Suricata</code> mencatat setiap koneksi <code>HTTP</code>, <code>TLS</code>, dan <code>DNS</code> ke dalam berkas <code>eve.json</code>. Saat terjadi serangan <i>DDoS</i>, volume log tersebut dapat membengkak drastis sehingga berpotensi membebani penyimpanan. Oleh karena itu, diperlukan optimalisasi agar hanya log bertipe <code>alert</code> yang dicatat. </p> <p align="justify"> &emsp; Implementasi dilakukan menggunakan script <code>Python</code> pada <code>VM 3</code> untuk menonaktifkan pencatatan protokol non-alert di dalam konfigurasi <code>suricata.yaml</code> secara otomatis: </p>
+<p align="justify"> &emsp; <b>6.2 Mencegah Banjir Log di suricata.yaml</b> </p> <p align="justify"> &emsp; Secara default, <code>Suricata</code> mencatat setiap koneksi <code>HTTP</code>, <code>TLS</code>, dan <code>DNS</code> ke dalam berkas <code>eve.json</code>. Saat terjadi serangan <i>DDoS</i>, volume log tersebut dapat membengkak drastis sehingga berpotensi membebani penyimpanan. Oleh karena itu, diperlukan optimalisasi agar hanya log bertipe <code>alert</code> yang dicatat. </p> <p align="justify"> &emsp; Implementasi dilakukan menggunakan script <code>Python</code> pada <code>VM 3</code> untuk menonaktifkan pencatatan protokol non-alert di dalam konfigurasi <code>suricata.yaml</code> secara otomatis: </p>
 
 ```python
 sudo python3 << 'PYEOF'
@@ -558,7 +575,7 @@ PYEOF
 
 <p align="justify"> &emsp; Langkah selanjutnya adalah memastikan aktivasi berkas <code>threshold.config</code> dengan melakukan proses <b><i>uncomment</i></b> pada baris <code>threshold-file: /etc/suricata/threshold.config</code> di dalam konfigurasi <code>suricata.yaml</code>. </p>
 
-<p align="justify"> &emsp; <b>5.3 Menulis Rule Deteksi Suricata (Workaround Suricata v8)</b> </p> <p align="justify"> &emsp; Langkah berikutnya adalah menyusun berkas rule kustom pada direktori <code>/var/lib/suricata/rules/local.rules</code>. Perlu diperhatikan adanya kendala kompatibilitas pada <code>Suricata</code> versi 8, di mana fitur <code>detection_filter</code> tidak dapat diintegrasikan bersama fungsi limitasi <code>threshold</code> dalam satu baris rule yang sama, serta kegagalan operasional saat menggunakan protokol <code>alert http</code>. Sebagai solusi alternatif (<b><i>workaround</i></b>), konfigurasi dilakukan dengan menerapkan <code>alert tcp</code> dan memisahkan mekanisme limitasi ke dalam berkas <code>threshold.config</code>: </p>
+<p align="justify"> &emsp; <b>6.3 Menulis Rule Deteksi Suricata (Workaround Suricata v8)</b> </p> <p align="justify"> &emsp; Langkah berikutnya adalah menyusun berkas rule kustom pada direktori <code>/var/lib/suricata/rules/local.rules</code>. Perlu diperhatikan adanya kendala kompatibilitas pada <code>Suricata</code> versi 8, di mana fitur <code>detection_filter</code> tidak dapat diintegrasikan bersama fungsi limitasi <code>threshold</code> dalam satu baris rule yang sama, serta kegagalan operasional saat menggunakan protokol <code>alert http</code>. Sebagai solusi alternatif (<b><i>workaround</i></b>), konfigurasi dilakukan dengan menerapkan <code>alert tcp</code> dan memisahkan mekanisme limitasi ke dalam berkas <code>threshold.config</code>: </p>
 
 ```sh
 sudo tee /var/lib/suricata/rules/local.rules << 'ENDRULES'
@@ -583,7 +600,7 @@ threshold gen_id 1, sig_id 9000003, type limit, track by_src, count 1, seconds 6
 EOF
 ```
 
-<p align="justify"> &emsp; <b>5.4 Memperbaiki Error Socket Tmpfs</b> </p> <p align="justify"> &emsp; Terkadang <code>Suricata</code> gagal start saat server di-reboot karena folder <code>/var/run/suricata/</code> (yang merupakan RAM sementara <code>/tmpfs</code>) terhapus, sehingga user <code>Suricata</code> tidak punya hak akses untuk membuat socket. Kita atasi masalah tersebut dengan mendaftarkannya di <code>systemd-tmpfiles</code>: </p>
+<p align="justify"> &emsp; <b>6.4 Memperbaiki Error Socket Tmpfs</b> </p> <p align="justify"> &emsp; Terkadang <code>Suricata</code> gagal start saat server di-reboot karena folder <code>/var/run/suricata/</code> (yang merupakan RAM sementara <code>/tmpfs</code>) terhapus, sehingga user <code>Suricata</code> tidak punya hak akses untuk membuat socket. Kita atasi masalah tersebut dengan mendaftarkannya di <code>systemd-tmpfiles</code>: </p>
 
 ```sh
 sudo tee /etc/tmpfiles.d/suricata.conf << 'EOF'
@@ -599,7 +616,7 @@ EOF
 sudo systemctl restart suricata
 ```
 
-<p align="justify"> &emsp; Langkah selanjutnya adalah mengonfigurasi <code>VM 3</code> agar mampu melakukan pembacaan terhadap log <code>Suricata</code> dan mengeksekusi instruksi dari <code>Wazuh Manager</code> secara otomatis. Hal ini 22 dilakukan dengan menambahkan blok konfigurasi pemantauan file log pada direktori <code>/var/ossec/etc/ossec.conf</code>, tepat sebelum tag penutup <code>&lt;/ossec_config&gt;</code>: </p>
+<p align="justify"> &emsp; Langkah selanjutnya adalah mengonfigurasi <code>VM 3</code> agar mampu melakukan pembacaan terhadap log <code>Suricata</code> dan mengeksekusi instruksi dari <code>Wazuh Manager</code> secara otomatis. Hal ini dilakukan dengan menambahkan blok konfigurasi pemantauan file log pada direktori <code>/var/ossec/etc/ossec.conf</code>, tepat sebelum tag penutup <code>&lt;/ossec_config&gt;</code>: </p>
 
 ```xml
 <localfile>
@@ -623,8 +640,8 @@ sudo systemctl restart suricata
 
 ```python
 #!/usr/bin/env python3
-
 import sys
+import os
 import json
 import subprocess
 import datetime
@@ -638,47 +655,49 @@ def log(msg):
 
 def get_ip(alert_json):
     data = alert_json.get("parameters", {}).get("alert", {}).get("data", {})
-    return (
-        data.get("srcip")
-        or data.get("src_ip")
-        or data.get("flow", {}).get("src_ip", "")
-    )
+    return (data.get("srcip") or data.get("src_ip") or
+            data.get("flow", {}).get("src_ip", ""))
 
 def run_iptables(command, ip):
     flag = "-I" if command == "add" else "-D"
-    cmd =
-
+    cmd = ["iptables", flag, "INPUT", "-s", ip, "-j", "DROP"]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
-
         if result.returncode == 0:
             log(f"iptables {flag} INPUT -s {ip} -j DROP  [OK]")
-
+        else:
+            log(f"iptables error: {result.stderr.strip()}")
         return result.returncode == 0
-
     except Exception as e:
         log(f"Exception running iptables: {e}")
-
-    return False
+        return False
 
 def main():
     log("Starting")
-
     raw = sys.stdin.readline().strip()
-
     if not raw:
+        log("Empty input")
         sys.exit(1)
+
+    log(raw[:300])
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
+        log(f"JSON parse error: {e}")
         sys.exit(1)
 
     command = data.get("command", "")
     src_ip  = get_ip(data)
 
+    if not src_ip:
+        log("Cannot read srcip from data")
+        sys.exit(1)
+
     if command in ("add", "delete"):
         run_iptables(command, src_ip)
+    else:
+        log(f"Unknown command: {command}")
 
 if __name__ == "__main__":
     main()
@@ -1087,7 +1106,7 @@ sudo chown root:wazuh /var/ossec/active-response/bin/shuffle-firewall-drop
 ```xml
 <command>
   <name>shuffle-firewall-drop</name>
-  <executable>shuffle-firewall-drop.sh</executable>
+  <executable>shuffle-firewall-drop</executable>
   <timeout_allowed>no</timeout_allowed>
 </command>
 
