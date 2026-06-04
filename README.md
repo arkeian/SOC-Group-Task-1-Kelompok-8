@@ -458,9 +458,235 @@ sudo systemctl start wazuh-dashboard
 
 ## V: Instalasi Wazuh Agent (VM 2 dan 3)
 
+<p align="justify"> &emsp; Langkah selanjutnya adalah melakukan proses instalasi <code>Wazuh Agent</code> pada <code>VM 2</code> dan <code>VM 3</code>. Di mana langkah implementasinya: </p> <ol> <li> <p align="justify"> <code>SSH</code> ke <code>VM 1</code> menggunakan kredensial yang sudah ditetapkan. </p> </li>
+<li>
+	<p align="justify">
+		Install <code>Wazuh Agent</code>:
+	</p>
+</li>
+</ol>
+
+```sh
+sudo apt-get update
+sudo apt-get install -y gnupg apt-transport-https
+
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | sudo gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import
+
+sudo chmod 644 /usr/share/keyrings/wazuh.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | sudo tee /etc/apt/sources.list.d/wazuh.list
+
+sudo apt-get update
+
+sudo WAZUH_MANAGER='[IP Privat Wazuh Manager]' apt-get install -y wazuh-agent
+
+sudo systemctl enable wazuh-agent
+sudo systemctl start wazuh-agent
+```
+
+<p align="justify"> &emsp; Setelah berhasil dilakukan instalasi, langkah selanjutnya adalah memverifikasi bahwasannya <code>Agent</code> berhasil terdaftar dan terhubung dengan <code>Wazuh Manager</code>. Hal ini dapat dilakukan pada <code>Wazuh Dashboard</code>, dengan memastikan kedua agent berstatus <code>Active</code>. </p> <ol start="3"> <li> <p align="justify"> Mitigasi Isu <b><i>Buffer Overflow</i></b> pada <code>Wazuh Agent</code>: Saat terdeteksi serangan oleh <code>Wazuh</code> dan <code>Suricata</code>, log yang dihasilkan akan berukuran sangat masif yang sesuai dengan jumlah serangan yang dilancarkan. Sehingga, buffer default pada <code>Wazuh Agent</code> akan mengalami <b><i>overflow</i></b>, karena hanya bisa menampung 1024 event. Jika lebih dari itu, agen akan membuang sisa log (<i>silent drop</i>) sehingga <code>Wazuh Manager</code> tidak menerima peringatan apapun. Untuk memperbaikinya, dilakukan konfigurasi bagian <code>/var/ossec/etc/ossec.conf</code> di kedua agent. Cari blok <code>&lt;client_buffer&gt;</code> dan ubah ukurannya menjadi 5000: </p> </li> </ol>
+
+```xml
+<client_buffer>
+  <disabled>no</disabled>
+  <queue_size>5000</queue_size>
+  <events_per_second>500</events_per_second>
+</client_buffer>
+```
+
+<ol start="4"> <li> <p align="justify"> Restart ulang <code>Wazuh Agent</code>: </p> </li> </ol>
+
+```sh
+sudo systemctl restart wazuh-agent
+```
+
 ## VI: Instalasi dan Konfigurasi Suricata dan NGINX (VM 3)
 
+<p align="justify"> &emsp; Pada langkah ini dilakukanlah proses instalasi <code>web server NGINX</code> sebagai target simulasi dan <code>Suricata</code> sebagai sensor keamanan jaringan. </p> <p align="justify"> &emsp; <b>5.1 NGINX dan Suricata</b> </p> <p align="justify"> &emsp; Pada <code>VM 3</code>, install <code>NGINX</code>: </p>
+
+```sh
+sudo apt-get install -y nginx
+sudo systemctl enable nginx && sudo systemctl start nginx
+```
+
+<p align="justify"> &emsp; Langkah selanjutnya adalah melakukan instalasi <code>Suricata</code> melalui repositori <code>PPA</code> resmi untuk memastikan ketersediaan versi terbaru yang telah mendukung mode <code>af-packet</code>: </p>
+
+```sh
+sudo add-apt-repository ppa:oisf/suricata-stable -y
+sudo apt-get update
+sudo apt-get install -y suricata suricata-update
+
+sudo suricata-update
+sudo systemctl enable suricata
+```
+
+<p align="justify"> &emsp; <b>5.2 Mencegah Banjir Log di suricata.yaml</b> </p> <p align="justify"> &emsp; Secara default, <code>Suricata</code> mencatat setiap koneksi <code>HTTP</code>, <code>TLS</code>, dan <code>DNS</code> ke dalam berkas <code>eve.json</code>. Saat terjadi serangan <i>DDoS</i>, volume log tersebut dapat membengkak drastis sehingga berpotensi membebani penyimpanan. Oleh karena itu, diperlukan optimalisasi agar hanya log bertipe <code>alert</code> yang dicatat. </p> <p align="justify"> &emsp; Implementasi dilakukan menggunakan script <code>Python</code> pada <code>VM 3</code> untuk menonaktifkan pencatatan protokol non-alert di dalam konfigurasi <code>suricata.yaml</code> secara otomatis: </p>
+
+```python
+sudo python3 << 'PYEOF'
+with open('/etc/suricata/suricata.yaml', 'r') as f:
+    lines = f.readlines()
+
+import re
+
+disable_types = {
+    'http', 'dns', 'mdns', 'tls',
+    'files', 'smtp', 'anomaly', 'dhcp'
+}
+
+result = []
+i = 0
+
+while i < len(lines):
+    line = lines[i]
+    m = re.match(r'^(\s+)- (\w[\w-]*)(:)?(\s|$)', line)
+
+    if m and len(m.group(1)) == 8 and m.group(2) in disable_types:
+        result.append(line)
+
+        if line.rstrip().endswith(':'):
+            result.append('            enabled: no\n')
+    else:
+        result.append(line)
+
+    i += 1
+
+with open('/etc/suricata/suricata.yaml', 'w') as f:
+    f.writelines(result)
+PYEOF
+```
+
+<p align="justify"> &emsp; Langkah selanjutnya adalah memastikan aktivasi berkas <code>threshold.config</code> dengan melakukan proses <b><i>uncomment</i></b> pada baris <code>threshold-file: /etc/suricata/threshold.config</code> di dalam konfigurasi <code>suricata.yaml</code>. </p>
+
+<p align="justify"> &emsp; <b>5.3 Menulis Rule Deteksi Suricata (Workaround Suricata v8)</b> </p> <p align="justify"> &emsp; Langkah berikutnya adalah menyusun berkas rule kustom pada direktori <code>/var/lib/suricata/rules/local.rules</code>. Perlu diperhatikan adanya kendala kompatibilitas pada <code>Suricata</code> versi 8, di mana fitur <code>detection_filter</code> tidak dapat diintegrasikan bersama fungsi limitasi <code>threshold</code> dalam satu baris rule yang sama, serta kegagalan operasional saat menggunakan protokol <code>alert http</code>. Sebagai solusi alternatif (<b><i>workaround</i></b>), konfigurasi dilakukan dengan menerapkan <code>alert tcp</code> dan memisahkan mekanisme limitasi ke dalam berkas <code>threshold.config</code>: </p>
+
+```sh
+sudo tee /var/lib/suricata/rules/local.rules << 'ENDRULES'
+
+# Mendeteksi ApacheBench HTTP Flood
+alert tcp any any -> $HOME_NET 80 (msg:"ET DOS ApacheBench HTTP Flood Detected"; content:"ApacheBench"; nocase; detection_filter:track by_src,count 30,seconds 30; priority:2; classtype:web-application-attack; sid:9000001; rev:1;)
+
+# Mendeteksi TCP SYN Flood
+alert tcp any any -> $HOME_NET 80 (msg:"ET DOS TCP SYN Flood to HTTP Port"; flags:S,12; detection_filter:track by_src,count 200,seconds 60; priority:1; classtype:attempted-dos; sid:9000003; rev:1;)
+
+ENDRULES
+```
+
+<p align="justify"> &emsp; Catatan: </p> <ul> <li> <p align="justify"> Penggunaan arah panah <code>-> $HOME_NET 80</code> bertujuan untuk membatasi observasi <code>Suricata</code> hanya pada trafik yang bersifat inbound. Konfigurasi dua arah berisiko menyebabkan IP server teridentifikasi sebagai sumber ancaman saat mengirimkan paket balasan, yang dapat memicu mekanisme pemblokiran diri sendiri. </p> </li> </ul> <p align="justify"> &emsp; Langkah berikutnya melibatkan penyusunan berkas <code>/etc/suricata/threshold.config</code> untuk melakukan limitasi terhadap alert, dengan menetapkan ambang batas maksimal satu notifikasi per menit untuk setiap entitas IP yang sama. </p>
+
+```sh
+sudo tee /etc/suricata/threshold.config << 'EOF'
+
+threshold gen_id 1, sig_id 9000001, type limit, track by_src, count 1, seconds 60
+threshold gen_id 1, sig_id 9000003, type limit, track by_src, count 1, seconds 60
+
+EOF
+```
+
+<p align="justify"> &emsp; <b>5.4 Memperbaiki Error Socket Tmpfs</b> </p> <p align="justify"> &emsp; Terkadang <code>Suricata</code> gagal start saat server di-reboot karena folder <code>/var/run/suricata/</code> (yang merupakan RAM sementara <code>/tmpfs</code>) terhapus, sehingga user <code>Suricata</code> tidak punya hak akses untuk membuat socket. Kita atasi masalah tersebut dengan mendaftarkannya di <code>systemd-tmpfiles</code>: </p>
+
+```sh
+sudo tee /etc/tmpfiles.d/suricata.conf << 'EOF'
+
+d /var/run/suricata 0755 suricata suricata -
+
+EOF
+```
+
+<p align="justify"> &emsp; Restart <code>Suricata</code>: </p>
+
+```sh
+sudo systemctl restart suricata
+```
+
+<p align="justify"> &emsp; Langkah selanjutnya adalah mengonfigurasi <code>VM 3</code> agar mampu melakukan pembacaan terhadap log <code>Suricata</code> dan mengeksekusi instruksi dari <code>Wazuh Manager</code> secara otomatis. Hal ini 22 dilakukan dengan menambahkan blok konfigurasi pemantauan file log pada direktori <code>/var/ossec/etc/ossec.conf</code>, tepat sebelum tag penutup <code>&lt;/ossec_config&gt;</code>: </p>
+
+```xml
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/suricata/eve.json</location>
+</localfile>
+
+<localfile>
+  <log_format>syslog</log_format>
+  <location>/var/ossec/logs/active-responses.log</location>
+</localfile>
+```
+
 ## VII: Konfigurasi Pembacaan Logfile (VM 3)
+
+<p align="justify"> &emsp; Tahap selanjutnya melibatkan penyusunan script eksekusi untuk menangani inkonsistensi data. Binary standar <code>Wazuh</code> tidak mampu mengekstrak IP penyerang dari <code>Suricata</code> karena adanya perbedaan format <code>JSON</code>, di mana <code>Suricata</code> menggunakan atribut <code>data.src_ip</code> sementara dekoder bawaan <code>Wazuh</code> mencari <code>data.srcip</code>. Selain itu, terdapat kendala teknis di mana pada daemon <code>wazuh-execd</code> data alert didistribusikan melalui <code>stdin</code> tanpa sinyal <code>EOF</code>, sehingga penggunaan fungsi <code>sys.stdin.read()</code> akan menyebabkan proses tertahan secara permanen. Untuk mengatasi hambatan tersebut, dilakukan pembuatan script <code>Python</code> baru pada direktori <code>/var/ossec/active-response/bin/suricata-firewall-drop</code> dengan menerapkan metode <code>sys.stdin.readline()</code> untuk memastikan pembacaan log berjalan secara interaktif dan otomatis: </p>
+
+```python
+#!/usr/bin/env python3
+
+import sys
+import json
+import subprocess
+import datetime
+
+LOG_FILE = "/var/ossec/logs/active-responses.log"
+
+def log(msg):
+    ts = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+    with open(LOG_FILE, "a") as f:
+        f.write(f"{ts} active-response/bin/suricata-firewall-drop: {msg}\n")
+
+def get_ip(alert_json):
+    data = alert_json.get("parameters", {}).get("alert", {}).get("data", {})
+    return (
+        data.get("srcip")
+        or data.get("src_ip")
+        or data.get("flow", {}).get("src_ip", "")
+    )
+
+def run_iptables(command, ip):
+    flag = "-I" if command == "add" else "-D"
+    cmd =
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode == 0:
+            log(f"iptables {flag} INPUT -s {ip} -j DROP  [OK]")
+
+        return result.returncode == 0
+
+    except Exception as e:
+        log(f"Exception running iptables: {e}")
+
+    return False
+
+def main():
+    log("Starting")
+
+    raw = sys.stdin.readline().strip()
+
+    if not raw:
+        sys.exit(1)
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        sys.exit(1)
+
+    command = data.get("command", "")
+    src_ip  = get_ip(data)
+
+    if command in ("add", "delete"):
+        run_iptables(command, src_ip)
+
+if __name__ == "__main__":
+    main()
+```
+
+<p align="justify"> &emsp; Ubah permission-nya agar dapat diakses oleh Wazuh: </p>
+
+```sh
+sudo chmod 750 /var/ossec/active-response/bin/suricata-firewall-drop
+sudo chown root:wazuh /var/ossec/active-response/bin/suricata-firewall-drop
+sudo systemctl restart wazuh-agent
+```
 
 ## VIII: Instalasi Apache Bench dan Simulasi DDoS (VM 2)
 
