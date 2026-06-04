@@ -1,0 +1,153 @@
+<!-- Local rules -->
+<!-- Modify it at your will. -->
+<!-- Copyright (C) 2015, Wazuh Inc. -->
+
+<!-- Example -->
+<group name="local,syslog,sshd,">
+  <rule id="100001" level="5">
+    <if_sid>5716</if_sid>
+    <srcip>1.1.1.1</srcip>
+    <description>sshd: authentication failed from IP 1.1.1.1.</description>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+</group>
+
+<group name="custom_rdp,authentication_failures,">
+
+  <rule id="100100" level="10" frequency="3" timeframe="120">
+    <if_matched_sid>60122</if_matched_sid>
+    <same_source_ip />
+    <description>Custom: RDP brute-force detected (3 failures in 2 minutes)</description>
+    <mitre><id>T1110.001</id></mitre>
+  </rule>
+
+  <rule id="100101" level="13">
+    <if_sid>60204</if_sid>
+    <field name="win.eventdata.targetUserName">Administrator</field>
+    <description>Critical: Multiple RDP failures against Administrator account</description>
+  </rule>
+
+  <rule id="100110" level="10" frequency="10" timeframe="60">
+    <if_matched_sid>31108</if_matched_sid>
+    <same_source_ip />
+    <description>Custom: Web brute-force (10x 2xx/3xx simple requests in 60s)</description>
+    <mitre><id>T1110.003</id></mitre>
+    <group>web,attack,authentication_failures,</group>
+  </rule>
+
+</group>
+
+<group name="ids,suricata,">
+  <!-- Severity 1 = highest priority (e.g. TCP SYN flood) -->
+  <rule id="86681" level="15">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^1$</field>
+    <description>Suricata: Critical Alert - $(alert.signature)</description>
+    <group>ddos,</group>
+  </rule>
+
+  <!-- Severity 2 = high priority (e.g. HTTP flood) -->
+  <rule id="86682" level="10">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^2$</field>
+    <description>Suricata: Alert - $(alert.signature)</description>
+  </rule>
+
+  <!-- Severity 3 = medium -->
+  <rule id="86683" level="5">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^3$</field>
+    <description>Suricata: Alert - $(alert.signature)</description>
+  </rule>
+
+  <!-- Severity 4 = low -->
+  <rule id="86684" level="3">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^4$</field>
+    <description>Suricata: Alert - $(alert.signature)</description>
+  </rule>
+
+  <!-- Severity not 1-4 -->
+  <rule id="86685" level="1">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity" type="pcre2">^(?![1234]$).*</field>
+    <description>Suricata: Alert - $(alert.signature)</description>
+  </rule>
+</group>
+
+<group name="custom_ddos_rules,suricata,">
+
+  <!-- GoldenEye HTTP flood -->
+  <rule id="100200" level="12">
+    <if_sid>86600</if_sid>
+    <field name="event_type">^alert$</field>
+    <match>ET DOS Inbound GoldenEye DoS attack</match>
+    <description>HTTP flood (GoldenEye) DoS attack detected by Suricata.</description>
+    <mitre><id>T1498</id></mitre>
+    <group>ddos,</group>
+  </rule>
+
+  <!-- TCP SYN flood -->
+  <rule id="100201" level="12">
+    <if_sid>86600</if_sid>
+    <field name="event_type">^alert$</field>
+    <match>SURICATA STREAM 3way handshake SYNACK without ACK</match>
+    <description>Possible TCP SYN flood detected on $(srcip).</description>
+    <mitre><id>T1498.001</id></mitre>
+    <group>ddos,syn_flood,</group>
+  </rule>
+
+  <!-- UDP flood -->
+  <rule id="100202" level="12">
+    <if_sid>86600</if_sid>
+    <field name="event_type">^alert$</field>
+    <match>ET DOS</match>
+    <field name="proto">UDP</field>
+    <description>UDP flood DoS pattern detected.</description>
+    <mitre><id>T1498.002</id></mitre>
+    <group>ddos,udp_flood,</group>
+  </rule>
+
+  <!-- Sustained DDoS: 30+ NIDS DoS alerts in 60s -->
+  <rule id="100203" level="14" frequency="30" timeframe="60">
+    <if_matched_group>ddos</if_matched_group>
+    <same_source_ip />
+    <description>Active DDoS in progress: >=30 NIDS DoS alerts from $(srcip) in 60s.</description>
+    <mitre><id>T1498</id></mitre>
+    <group>ddos,active_attack,</group>
+  </rule>
+
+  <!-- Layer-7 HTTP flood via NGINX access logs:
+       Rule 31108 fires for 2xx/3xx simple HTTP requests (e.g. AB GET /).
+       200 such requests from the same source IP in 60s = flood. -->
+  <rule id="100204" level="11" frequency="200" timeframe="60">
+    <if_matched_sid>31108</if_matched_sid>
+    <same_source_ip />
+    <description>Layer-7 HTTP flood: 200 requests from $(srcip) in 60s (nginx log).</description>
+    <mitre><id>T1498.001</id></mitre>
+    <group>web,ddos,</group>
+  </rule>
+
+  <!-- Layer-7 HTTP flood detected via Suricata severity-2 alerts:
+       50 Suricata severity-2 alerts from the same source in 60s = sustained HTTP flood.
+       Custom Suricata local rules (sid:9000001-9000002) fire on request direction,
+       so srcip = attacker (10.0.0.5), enabling correct firewall-drop. -->
+  <rule id="100205" level="12" frequency="50" timeframe="60">
+    <if_matched_sid>86682</if_matched_sid>
+    <same_source_ip />
+    <description>HTTP flood detected by Suricata IDS: 50 alerts from $(srcip) in 60s.</description>
+    <mitre><id>T1498.001</id></mitre>
+    <group>ddos,web,</group>
+  </rule>
+
+  <!-- Immediate block on Suricata severity-1 critical alerts (TCP SYN flood, etc.)
+       Custom sid:9000003 fires at priority:1 when SYN flood detected. -->
+  <rule id="100208" level="13">
+    <if_sid>86681</if_sid>
+    <match>ET DOS</match>
+    <description>Critical DoS attack detected by Suricata (severity 1): $(alert.signature) from $(srcip)</description>
+    <mitre><id>T1498</id></mitre>
+    <group>ddos,active_attack,</group>
+  </rule>
+
+</group>

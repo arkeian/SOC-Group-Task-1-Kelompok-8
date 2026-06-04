@@ -1,0 +1,8 @@
+# DDoS detection rules - all alert tcp (detection_filter requires packet-level)
+# threshold.config limits to 1 alert per 60s per src
+
+alert tcp any any -> $HOME_NET 80 (msg:"ET DOS ApacheBench HTTP Flood Detected"; content:"ApacheBench"; nocase; detection_filter:track by_src,count 30,seconds 30; priority:2; classtype:web-application-attack; metadata:attack_target Server_Endpoint,deployment Perimeter,signature_severity Major; sid:9000001; rev:4;)
+
+alert tcp any any -> $HOME_NET 80 (msg:"ET DOS HTTP GET Request Flood High Rate"; content:"GET "; depth:4; detection_filter:track by_src,count 200,seconds 60; priority:2; classtype:attempted-dos; metadata:attack_target Server_Endpoint,deployment Perimeter,signature_severity Major; sid:9000002; rev:4;)
+
+alert tcp any any -> $HOME_NET 80 (msg:"ET DOS TCP SYN Flood to HTTP Port"; flags:S,12; detection_filter:track by_src,count 200,seconds 60; priority:1; classtype:attempted-dos; metadata:attack_target Server_Endpoint,deployment Perimeter,signature_severity Critical; sid:9000003; rev:4;)

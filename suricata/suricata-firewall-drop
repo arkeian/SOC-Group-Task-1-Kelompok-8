@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+import sys
+import os
+import json
+import subprocess
+import datetime
+
+LOG_FILE = "/var/ossec/logs/active-responses.log"
+
+def log(msg):
+    ts = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+    with open(LOG_FILE, "a") as f:
+        f.write(f"{ts} active-response/bin/suricata-firewall-drop: {msg}\n")
+
+def get_ip(alert_json):
+    data = alert_json.get("parameters", {}).get("alert", {}).get("data", {})
+    return (data.get("srcip") or data.get("src_ip") or
+            data.get("flow", {}).get("src_ip", ""))
+
+def run_iptables(command, ip):
+    flag = "-I" if command == "add" else "-D"
+    cmd = ["iptables", flag, "INPUT", "-s", ip, "-j", "DROP"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            log(f"iptables {flag} INPUT -s {ip} -j DROP  [OK]")
+        else:
+            log(f"iptables error: {result.stderr.strip()}")
+        return result.returncode == 0
+    except Exception as e:
+        log(f"Exception running iptables: {e}")
+        return False
+
+def main():
+    log("Starting")
+    raw = sys.stdin.readline().strip()
+    if not raw:
+        log("Empty input")
+        sys.exit(1)
+
+    log(raw[:300])
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        log(f"JSON parse error: {e}")
+        sys.exit(1)
+
+    command = data.get("command", "")
+    src_ip  = get_ip(data)
+
+    if not src_ip:
+        log("Cannot read srcip from data")
+        sys.exit(1)
+
+    if command in ("add", "delete"):
+        run_iptables(command, src_ip)
+    else:
+        log(f"Unknown command: {command}")
+
+if __name__ == "__main__":
+    main()
