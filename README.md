@@ -615,7 +615,11 @@ sudo systemctl restart suricata
 
 ## VII: Konfigurasi Pembacaan Logfile (VM 3)
 
-<p align="justify"> &emsp; Tahap selanjutnya melibatkan penyusunan script eksekusi untuk menangani inkonsistensi data. Binary standar <code>Wazuh</code> tidak mampu mengekstrak IP penyerang dari <code>Suricata</code> karena adanya perbedaan format <code>JSON</code>, di mana <code>Suricata</code> menggunakan atribut <code>data.src_ip</code> sementara dekoder bawaan <code>Wazuh</code> mencari <code>data.srcip</code>. Selain itu, terdapat kendala teknis di mana pada daemon <code>wazuh-execd</code> data alert didistribusikan melalui <code>stdin</code> tanpa sinyal <code>EOF</code>, sehingga penggunaan fungsi <code>sys.stdin.read()</code> akan menyebabkan proses tertahan secara permanen. Untuk mengatasi hambatan tersebut, dilakukan pembuatan script <code>Python</code> baru pada direktori <code>/var/ossec/active-response/bin/suricata-firewall-drop</code> dengan menerapkan metode <code>sys.stdin.readline()</code> untuk memastikan pembacaan log berjalan secara interaktif dan otomatis: </p>
+<p align="justify"> &emsp; Tahap selanjutnya melibatkan penyusunan script eksekusi untuk menangani inkonsistensi data. Binary standar <code>Wazuh</code> tidak mampu mengekstrak IP penyerang dari <code>Suricata</code> karena adanya perbedaan format <code>JSON</code>, di mana <code>Suricata</code> menggunakan atribut <code>data.src_ip</code> sementara dekoder bawaan <code>Wazuh</code> mencari <code>data.srcip</code>.
+</p>
+
+
+<p align="justify"> &emsp; Selain itu, terdapat kendala teknis di mana pada daemon <code>wazuh-execd</code> data alert didistribusikan melalui <code>stdin</code> tanpa sinyal <code>EOF</code>, sehingga penggunaan fungsi <code>sys.stdin.read()</code> akan menyebabkan proses tertahan secara permanen. Untuk mengatasi hambatan tersebut, dilakukan pembuatan script <code>Python</code> baru pada direktori <code>/var/ossec/active-response/bin/suricata-firewall-drop</code> dengan menerapkan metode <code>sys.stdin.readline()</code> untuk memastikan pembacaan log berjalan secara interaktif dan otomatis: </p>
 
 ```python
 #!/usr/bin/env python3
@@ -690,6 +694,38 @@ sudo systemctl restart wazuh-agent
 
 ## VIII: Instalasi Apache Bench dan Simulasi DDoS (VM 2)
 
+<p align="justify"> &emsp; Langkah selanjutnya adalah melakukan simulasi serangan <i>DDoS</i> terhadap sistem <code>NGINX</code>, dengan harapannya sistem <code>Wazuh</code> dan <code>Suricata</code> mampu mendeteksi serangan tersebut dan melakukan mitigasi secara otomatis. Di mana langkah implementasinya: </p> <ol> <li> <p align="justify"> Pada <code>VM 2</code>, lakukan instalasi <code>Apache Bench</code> yang akan dipakai untuk melakukan simulasi serangan: </p> </li> </ol>
+
+```sh
+sudo apt-get install -y apache2-utils
+```
+
+<ol start="2"> <li> <p align="justify"> Kemudian lakukan serangan pada situs web <code>NGINX</code> milik <code>VM 3</code>: </p> </li> </ol>
+
+```sh
+ab -n 5000 -c 200 -r http://10.0.0.6/
+```
+
+<ol start="3"> <li> <p align="justify"> Lakukan Validasi Deteksi Serangan melalui <code>Wazuh Dashboard</code>: </p> </li> </ol> <p align="justify"> &emsp; 27 </p> <p align="justify"> &emsp; 28 </p> <p align="justify"> &emsp; 29 </p> <ol start="4"> <li> <p align="justify"> Lakukan validasi <code>IDS</code> pada file <code>fast.log</code> milik <code>Suricata</code> di <code>VM 3</code>: </p> </li> </ol>
+
+```sh
+sudo tail -5 /var/log/suricata/fast.log
+```
+
+<ol start="5"> <li> <p align="justify"> Validasi Rule Manager (<code>VM 1</code>) apakah berhasil memvalidasi log dari <code>Suricata</code> dan menjadikannya peringatan kritis: </p> </li> </ol>
+
+```sh
+sudo grep -E 'Rule: 100208' /var/ossec/logs/alerts/alerts.log
+```
+
+<p align="justify"> &emsp; 30 </p> <ol start="6"> <li> <p align="justify"> Pembuktian <b><i>Active Response</i></b> & Blokir <code>Firewall</code> (<code>VM 3</code>), kembali ke terminal <code>VM 3</code>. Cek log eksekusi <b><i>Active Response</i></b>: </p> </li> </ol>
+
+```sh
+sudo cat /var/ossec/logs/active-responses.log
+```
+
+<p align="justify"> &emsp; Eksekusi <b><i>active response</i></b> berhasil terekam melalui log <code>iptables -I INPUT -s 10.0.0.5 -j DROP [OK]</code>. Untuk memverifikasi kondisi aktual pada kernel jaringan, jalankan perintah <code>sudo iptables -L INPUT -n</code>, di mana rule <code>DROP</code> akan terlihat terpasang pada prioritas teratas untuk entitas <code>IP 10.0.0.5</code>. </p> <ol start="7"> <li> <p align="justify"> Validasi Pemblokiran Jaringan dilakukan untuk membuktikan efektivitas <code>firewall</code> dalam mengisolasi ancaman. Pengujian dilakukan melalui terminal <code>VM 2</code> dengan mengeksekusi perintah <code>ping -c 5 [IP Privat VM 3]</code>. Hasil pengujian menunjukkan status <code>Operation timed out</code>, yang mengonfirmasi bahwa penyerang telah berhasil diisolasi sepenuhnya dari sistem sasaran. </p> </li> </ol>
+
 ## IX: Instalasi Docker dan Shuffle (VM 4)
 
 ## X: Konfigurasi Webhook Wazuh (VM 1)
@@ -702,3 +738,4 @@ sudo systemctl restart wazuh-agent
 
 ## XIV: Penutup
 
+<p align="justify"> &emsp; Melalui pengaturan logging density dan distribution yang tepat, sistem SIEM Wazuh ini berhasil mendeteksi pola anomali (DDoS) tanpa melumpuhkan infrastruktur Azure yang terbatas. Sistem mampu menyaring trafik yang sangat padat menjadi informasi alert yang ringkas dan mudah dibaca pada dashboard, memastikan fungsionalitas deteksi tetap optimal tanpa membebani sumber daya server.  </p>
